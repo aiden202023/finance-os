@@ -15,6 +15,18 @@ from routes import accounts, auth_routes, goals, transactions
 
 Base.metadata.create_all(bind=engine)
 
+# Migrate existing DB — add columns introduced after initial schema
+with engine.connect() as _conn:
+    for _col, _typedef in [
+        ("reset_token", "TEXT"),
+        ("reset_token_expires", "DATETIME"),
+    ]:
+        try:
+            _conn.execute(__import__("sqlalchemy").text(f"ALTER TABLE users ADD COLUMN {_col} {_typedef}"))
+            _conn.commit()
+        except Exception:
+            pass
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Finance OS API", version="1.0.0")
 app.state.limiter = limiter

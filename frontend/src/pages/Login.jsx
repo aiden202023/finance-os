@@ -59,6 +59,9 @@ export default function Login() {
           </button>
         </form>
         <div className="auth-link">
+          <Link to="/forgot-password">Forgot password?</Link>
+        </div>
+        <div className="auth-link">
           No account? <Link to="/register">Create one</Link>
         </div>
       </div>

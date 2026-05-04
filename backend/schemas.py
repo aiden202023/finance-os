@@ -57,6 +57,38 @@ class Token(BaseModel):
     token_type: str
 
 
+class ForgotPassword(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower().strip()
+
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        errors = []
+        if len(v) < 12:
+            errors.append("at least 12 characters")
+        if not any(c.isupper() for c in v):
+            errors.append("an uppercase letter")
+        if not any(c.islower() for c in v):
+            errors.append("a lowercase letter")
+        if not any(c.isdigit() for c in v):
+            errors.append("a number")
+        if not any(c in "!@#$%^&*()_+-=[]{}|;':\",./<>?" for c in v):
+            errors.append("a special character")
+        if errors:
+            raise ValueError("Password must contain: " + ", ".join(errors))
+        return v
+
+
 # ── Accounts ──────────────────────────────────────────────────────────────────
 
 VALID_ACCOUNT_TYPES = {"roth_ira", "hysa", "taxable", "checking"}
