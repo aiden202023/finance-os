@@ -91,7 +91,7 @@ class ResetPassword(BaseModel):
 
 # ── Accounts ──────────────────────────────────────────────────────────────────
 
-VALID_ACCOUNT_TYPES = {"roth_ira", "hysa", "taxable", "checking"}
+VALID_ACCOUNT_TYPES = {"roth_ira", "hysa", "taxable", "checking", "savings"}
 
 
 class AccountCreate(BaseModel):
@@ -124,11 +124,15 @@ class TransactionCreate(BaseModel):
     amount: float
     description: str = ""
     date: Optional[datetime] = None
+    category: Optional[str] = None
+    is_recurring: bool = False
 
 
 class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     date: Optional[datetime] = None
+    category: Optional[str] = None
+    is_recurring: Optional[bool] = None
 
 
 class TransactionResponse(BaseModel):
@@ -143,6 +147,8 @@ class TransactionResponse(BaseModel):
     created_at: datetime
     account_name: Optional[str] = None
     account_type: Optional[str] = None
+    category: Optional[str] = None
+    is_recurring: bool = False
 
 
 # ── Goals ─────────────────────────────────────────────────────────────────────

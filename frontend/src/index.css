@@ -166,6 +166,7 @@ html, body, #root {
 .badge-checking { background: rgba(148,163,184,0.15); color: var(--muted); }
 .badge-deposit { background: var(--green-dim); color: var(--green); }
 .badge-withdrawal { background: var(--red-dim); color: var(--red); }
+.badge-savings { background: rgba(6,182,212,0.15); color: #06b6d4; }
 
 /* ── Table ──────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }
@@ -304,6 +305,12 @@ tr:hover td { background: var(--bg3); }
 .import-result-label { font-size: 13px; color: var(--muted); }
 .import-result-value { font-size: 15px; font-weight: 600; }
 .import-result-ok { color: var(--green); }
+
+/* ── Spending chart ─────────────────────────────── */
+.spending-chart-wrap { margin-top: 8px; }
+
+/* ── Stat delta ─────────────────────────────────── */
+.stat-sub { min-height: 20px; }
 
 /* ── Misc ───────────────────────────────────────── */
 .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }

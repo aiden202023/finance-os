@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from "recharts";
 import api from "../api/client";
@@ -13,6 +14,7 @@ const ACCOUNT_COLORS = {
   hysa: "var(--green)",
   taxable: "var(--yellow)",
   checking: "var(--muted)",
+  savings: "#06b6d4",
 };
 
 const ACCOUNT_LABELS = {
@@ -20,7 +22,38 @@ const ACCOUNT_LABELS = {
   hysa: "HYSA",
   taxable: "Taxable",
   checking: "Checking",
+  savings: "Savings",
 };
+
+function delta(current, prev) {
+  if (!prev) return null;
+  return ((current - prev) / prev) * 100;
+}
+
+function DeltaChip({ value, invertColor }) {
+  if (value === null || isNaN(value)) return null;
+  const positive = invertColor ? value < 0 : value > 0;
+  const color = positive ? "var(--green)" : "var(--red)";
+  const sign = value > 0 ? "+" : "";
+  return (
+    <span style={{ fontSize: 12, color, fontWeight: 600, marginLeft: 8 }}>
+      {sign}{value.toFixed(1)}% vs last mo
+    </span>
+  );
+}
+
+function MonthlyStatCard({ label, value, prev, invertColor }) {
+  const d = delta(value, prev);
+  return (
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{fmt(value)}</div>
+      <div className="stat-sub">
+        {prev !== undefined && <><span style={{ color: "var(--muted)" }}>Last mo: {fmt(prev)}</span><DeltaChip value={d} invertColor={invertColor} /></>}
+      </div>
+    </div>
+  );
+}
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -32,18 +65,35 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
+function SpendingTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="card card-sm" style={{ minWidth: 140 }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{payload[0].payload.category}</div>
+      <div style={{ fontWeight: 700 }}>{fmt(payload[0].value)}</div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
+  const [monthlyStats, setMonthlyStats] = useState(null);
+  const [spending, setSpending] = useState([]);
 
   useEffect(() => {
     api.get("/dashboard/summary").then((r) => setSummary(r.data));
     api.get("/dashboard/net-worth-history").then((r) => setHistory(r.data));
+    api.get("/dashboard/monthly-stats").then((r) => setMonthlyStats(r.data));
+    api.get("/dashboard/spending-by-category").then((r) => setSpending(r.data));
   }, []);
 
   if (!summary) {
     return <div className="empty-state"><div className="empty-icon">⏳</div><div>Loading…</div></div>;
   }
+
+  const thisMonth = monthlyStats?.this_month;
+  const lastMonth = monthlyStats?.last_month;
 
   return (
     <div>
@@ -66,7 +116,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Account breakdown */}
         <div className="account-mini-grid">
           {summary.accounts.map((a) => (
             <div className="account-mini" key={a.id}>
@@ -78,6 +127,28 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* Monthly comparison */}
+      {thisMonth && (
+        <div className="stats-grid" style={{ marginBottom: 20 }}>
+          <MonthlyStatCard
+            label="Income This Month"
+            value={thisMonth.income}
+            prev={lastMonth?.income}
+          />
+          <MonthlyStatCard
+            label="Spending This Month"
+            value={thisMonth.spending}
+            prev={lastMonth?.spending}
+            invertColor
+          />
+          <MonthlyStatCard
+            label="Net This Month"
+            value={thisMonth.net}
+            prev={lastMonth?.net}
+          />
+        </div>
+      )}
 
       <div className="dash-grid">
         {/* Net worth chart */}
@@ -147,6 +218,35 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Spending by category */}
+      {spending.length > 0 && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <div className="section-title">Spending by Category — This Month</div>
+          <ResponsiveContainer width="100%" height={Math.max(spending.length * 48, 120)}>
+            <BarChart data={spending} layout="vertical" margin={{ top: 4, right: 24, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fill: "var(--muted)", fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`}
+              />
+              <YAxis
+                type="category"
+                dataKey="category"
+                tick={{ fill: "var(--text)", fontSize: 13 }}
+                tickLine={false}
+                axisLine={false}
+                width={110}
+              />
+              <Tooltip content={<SpendingTooltip />} />
+              <Bar dataKey="amount" fill="var(--accent)" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }

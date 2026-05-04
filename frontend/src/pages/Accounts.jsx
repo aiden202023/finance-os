@@ -4,8 +4,8 @@ import api from "../api/client";
 const fmt = (n) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 
-const TYPES = ["roth_ira", "hysa", "taxable", "checking"];
-const TYPE_LABELS = { roth_ira: "Roth IRA", hysa: "HYSA", taxable: "Taxable", checking: "Checking" };
+const TYPES = ["roth_ira", "hysa", "taxable", "checking", "savings"];
+const TYPE_LABELS = { roth_ira: "Roth IRA", hysa: "HYSA", taxable: "Taxable", checking: "Checking", savings: "Savings" };
 
 function AccountModal({ account, onClose, onSaved }) {
   const [form, setForm] = useState({

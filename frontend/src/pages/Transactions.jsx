@@ -4,7 +4,35 @@ import api from "../api/client";
 const fmt = (n) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 
-const TYPE_LABELS = { roth_ira: "Roth IRA", hysa: "HYSA", taxable: "Taxable", checking: "Checking" };
+const TYPE_LABELS = { roth_ira: "Roth IRA", hysa: "HYSA", taxable: "Taxable", checking: "Checking", savings: "Savings" };
+
+const CATEGORIES = [
+  "income", "housing", "food & dining", "transport",
+  "shopping", "health", "entertainment", "investment", "savings", "other",
+];
+
+const CAT_COLORS = {
+  income:         { bg: "var(--green-dim)",              color: "var(--green)" },
+  housing:        { bg: "var(--accent-dim)",             color: "var(--accent)" },
+  "food & dining":{ bg: "rgba(245,158,11,0.15)",         color: "var(--yellow)" },
+  transport:      { bg: "rgba(148,163,184,0.15)",        color: "var(--muted)" },
+  shopping:       { bg: "var(--red-dim)",                color: "var(--red)" },
+  health:         { bg: "rgba(6,182,212,0.15)",          color: "#06b6d4" },
+  entertainment:  { bg: "rgba(249,115,22,0.15)",         color: "#f97316" },
+  investment:     { bg: "var(--accent-dim)",             color: "var(--accent)" },
+  savings:        { bg: "var(--green-dim)",              color: "var(--green)" },
+  other:          { bg: "rgba(148,163,184,0.15)",        color: "var(--muted)" },
+};
+
+function CategoryBadge({ category }) {
+  if (!category) return <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>;
+  const c = CAT_COLORS[category] || CAT_COLORS.other;
+  return (
+    <span className="badge" style={{ background: c.bg, color: c.color }}>
+      {category}
+    </span>
+  );
+}
 
 function TransactionModal({ accounts, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -13,6 +41,8 @@ function TransactionModal({ accounts, onClose, onSaved }) {
     amount: "",
     description: "",
     date: new Date().toISOString().slice(0, 10),
+    category: "",
+    is_recurring: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,6 +58,8 @@ function TransactionModal({ accounts, onClose, onSaved }) {
         amount: parseFloat(form.amount),
         description: form.description,
         date: form.date ? new Date(form.date).toISOString() : undefined,
+        category: form.category || null,
+        is_recurring: form.is_recurring,
       });
       onSaved();
     } catch (err) {
@@ -95,15 +127,39 @@ function TransactionModal({ accounts, onClose, onSaved }) {
               />
             </div>
           </div>
-          <div className="form-group">
-            <label className="label">Description (optional)</label>
-            <input
-              className="input"
-              placeholder="e.g. Paycheck, ETF purchase…"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
+          <div className="form-row">
+            <div className="form-group">
+              <label className="label">Description (optional)</label>
+              <input
+                className="input"
+                placeholder="e.g. Paycheck, ETF purchase…"
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="label">Category</label>
+              <select
+                className="select"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                <option value="">Uncategorized</option>
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                ))}
+              </select>
+            </div>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.is_recurring}
+              onChange={(e) => setForm({ ...form, is_recurring: e.target.checked })}
+              style={{ width: 16, height: 16, accentColor: "var(--accent)" }}
+            />
+            Recurring monthly — auto-log this every month
+          </label>
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -259,6 +315,11 @@ export default function Transactions() {
     setAccounts(accts.data);
   }
 
+  useEffect(() => {
+    api.post("/transactions/apply-recurring").catch(() => {});
+    load();
+  }, []);
+
   useEffect(() => { load(); }, [filter]);
 
   async function handleDelete(id) {
@@ -324,6 +385,7 @@ export default function Transactions() {
                   <th>Date</th>
                   <th>Account</th>
                   <th>Description</th>
+                  <th>Category</th>
                   <th>Type</th>
                   <th>Amount</th>
                   <th></th>
@@ -341,9 +403,15 @@ export default function Transactions() {
                         {TYPE_LABELS[t.account_type] || t.account_type}
                       </div>
                     </td>
-                    <td style={{ color: t.description ? "var(--text)" : "var(--muted)", fontStyle: t.description ? "normal" : "italic" }}>
-                      {t.description || "—"}
+                    <td>
+                      <div style={{ color: t.description ? "var(--text)" : "var(--muted)", fontStyle: t.description ? "normal" : "italic" }}>
+                        {t.description || "—"}
+                      </div>
+                      {t.is_recurring && (
+                        <div style={{ fontSize: 11, color: "var(--accent)", marginTop: 2 }}>↻ recurring</div>
+                      )}
                     </td>
+                    <td><CategoryBadge category={t.category} /></td>
                     <td>
                       <span className={`badge badge-${t.type}`}>
                         {t.type === "deposit" ? "Deposit" : "Withdrawal"}

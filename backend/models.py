@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -46,6 +46,9 @@ class Transaction(Base):
     description = Column(String, default="")
     date = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    category = Column(String, nullable=True)
+    is_recurring = Column(Boolean, default=False)
 
     account = relationship("Account", back_populates="transactions")
 

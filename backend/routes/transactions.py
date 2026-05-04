@@ -25,6 +25,8 @@ def _serialize(txn: models.Transaction) -> dict:
         "created_at": txn.created_at,
         "account_name": txn.account.name if txn.account else None,
         "account_type": txn.account.type if txn.account else None,
+        "category": txn.category,
+        "is_recurring": txn.is_recurring or False,
     }
 
 
@@ -70,6 +72,8 @@ def create_transaction(
         amount=data.amount,
         description=data.description,
         date=data.date or datetime.utcnow(),
+        category=data.category,
+        is_recurring=data.is_recurring,
     )
     db.add(txn)
 
@@ -95,6 +99,10 @@ def update_transaction(
         txn.description = data.description
     if data.date is not None:
         txn.date = data.date
+    if data.category is not None:
+        txn.category = data.category
+    if data.is_recurring is not None:
+        txn.is_recurring = data.is_recurring
     db.commit()
     db.refresh(txn)
     return _serialize(txn)
@@ -117,6 +125,58 @@ def delete_transaction(
 
     db.delete(txn)
     db.commit()
+
+
+@router.post("/apply-recurring")
+def apply_recurring(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    now = datetime.utcnow()
+    month_start = datetime(now.year, now.month, 1)
+
+    templates = (
+        db.query(models.Transaction)
+        .join(models.Account)
+        .filter(
+            models.Account.user_id == current_user.id,
+            models.Transaction.is_recurring == True,
+        )
+        .all()
+    )
+
+    created = 0
+    for tmpl in templates:
+        already_exists = (
+            db.query(models.Transaction)
+            .filter(
+                models.Transaction.account_id == tmpl.account_id,
+                models.Transaction.type == tmpl.type,
+                models.Transaction.amount == tmpl.amount,
+                models.Transaction.description == tmpl.description,
+                models.Transaction.date >= month_start,
+            )
+            .first()
+        )
+        if not already_exists:
+            new_txn = models.Transaction(
+                account_id=tmpl.account_id,
+                type=tmpl.type,
+                amount=tmpl.amount,
+                description=tmpl.description,
+                category=tmpl.category,
+                date=now,
+                is_recurring=False,
+            )
+            db.add(new_txn)
+            if tmpl.type == "deposit":
+                tmpl.account.balance += tmpl.amount
+            else:
+                tmpl.account.balance -= tmpl.amount
+            created += 1
+
+    db.commit()
+    return {"created": created}
 
 
 @router.post("/import")

@@ -27,6 +27,17 @@ with engine.connect() as _conn:
         except Exception:
             pass
 
+with engine.connect() as _conn:
+    for _col, _typedef in [
+        ("category", "TEXT"),
+        ("is_recurring", "INTEGER DEFAULT 0"),
+    ]:
+        try:
+            _conn.execute(__import__("sqlalchemy").text(f"ALTER TABLE transactions ADD COLUMN {_col} {_typedef}"))
+            _conn.commit()
+        except Exception:
+            pass
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Finance OS API", version="1.0.0")
 app.state.limiter = limiter
@@ -126,3 +137,63 @@ def net_worth_history(
         result.append({"date": today_key, "net_worth": running})
 
     return result
+
+
+@app.get("/dashboard/monthly-stats")
+def monthly_stats(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now()
+    this_start = datetime(now.year, now.month, 1)
+    last_start = datetime(now.year - 1, 12, 1) if now.month == 1 else datetime(now.year, now.month - 1, 1)
+
+    def stats_for(start, end):
+        txns = (
+            db.query(models.Transaction)
+            .join(models.Account)
+            .filter(
+                models.Account.user_id == current_user.id,
+                models.Transaction.date >= start,
+                models.Transaction.date < end,
+            )
+            .all()
+        )
+        income = sum(t.amount for t in txns if t.type == "deposit")
+        spending = sum(t.amount for t in txns if t.type == "withdrawal")
+        return {"income": income, "spending": spending, "net": income - spending}
+
+    return {
+        "this_month": stats_for(this_start, now),
+        "last_month": stats_for(last_start, this_start),
+    }
+
+
+@app.get("/dashboard/spending-by-category")
+def spending_by_category(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now()
+    month_start = datetime(now.year, now.month, 1)
+
+    txns = (
+        db.query(models.Transaction)
+        .join(models.Account)
+        .filter(
+            models.Account.user_id == current_user.id,
+            models.Transaction.type == "withdrawal",
+            models.Transaction.date >= month_start,
+        )
+        .all()
+    )
+
+    by_cat: dict[str, float] = {}
+    for t in txns:
+        cat = t.category or "other"
+        by_cat[cat] = by_cat.get(cat, 0) + t.amount
+
+    return sorted(
+        [{"category": k, "amount": round(v, 2)} for k, v in by_cat.items()],
+        key=lambda x: -x["amount"],
+    )
