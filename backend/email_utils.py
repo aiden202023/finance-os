@@ -1,6 +1,9 @@
 import os
 import smtplib
 from email.mime.text import MIMEText
+from dotenv import load_dotenv
+
+load_dotenv()
 
 APP_URL = os.getenv("APP_URL", "http://localhost:5174")
 
