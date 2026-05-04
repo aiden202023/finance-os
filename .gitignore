@@ -9,3 +9,5 @@ __pycache__/
 # Node
 node_modules/
 dist/
+
+# Screenshots are committed intentionally
