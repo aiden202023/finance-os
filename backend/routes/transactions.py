@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -30,9 +31,30 @@ def _serialize(txn: models.Transaction) -> dict:
     }
 
 
+def _apply_filters(q, account_id, type, category, search, date_from, date_to):
+    if account_id is not None:
+        q = q.filter(models.Transaction.account_id == account_id)
+    if type is not None:
+        q = q.filter(models.Transaction.type == type)
+    if category is not None:
+        q = q.filter(models.Transaction.category == category)
+    if search:
+        q = q.filter(models.Transaction.description.ilike(f"%{search}%"))
+    if date_from:
+        q = q.filter(models.Transaction.date >= datetime.fromisoformat(date_from))
+    if date_to:
+        q = q.filter(models.Transaction.date <= datetime.fromisoformat(date_to))
+    return q
+
+
 @router.get("/", response_model=list[schemas.TransactionResponse])
 def list_transactions(
     account_id: Optional[int] = Query(None),
+    type: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -41,10 +63,52 @@ def list_transactions(
         .join(models.Account)
         .filter(models.Account.user_id == current_user.id)
     )
-    if account_id is not None:
-        q = q.filter(models.Transaction.account_id == account_id)
+    q = _apply_filters(q, account_id, type, category, search, date_from, date_to)
     txns = q.order_by(models.Transaction.date.desc()).all()
     return [_serialize(t) for t in txns]
+
+
+@router.get("/export")
+def export_transactions(
+    account_id: Optional[int] = Query(None),
+    type: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = (
+        db.query(models.Transaction)
+        .join(models.Account)
+        .filter(models.Account.user_id == current_user.id)
+    )
+    q = _apply_filters(q, account_id, type, category, search, date_from, date_to)
+    txns = q.order_by(models.Transaction.date.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Account", "Account Type", "Type", "Amount", "Description", "Category", "Recurring"])
+    for t in txns:
+        writer.writerow([
+            t.date.date().isoformat(),
+            t.account.name if t.account else "",
+            t.account.type if t.account else "",
+            t.type,
+            t.amount,
+            t.description,
+            t.category or "",
+            "yes" if t.is_recurring else "no",
+        ])
+
+    output.seek(0)
+    filename = f"transactions-{datetime.now().strftime('%Y-%m-%d')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.post("/", response_model=schemas.TransactionResponse, status_code=status.HTTP_201_CREATED)
@@ -95,6 +159,24 @@ def update_transaction(
     db: Session = Depends(get_db),
 ):
     txn = _get_owned_txn(txn_id, current_user.id, db)
+
+    if data.type is not None and data.type not in ("deposit", "withdrawal"):
+        raise HTTPException(400, detail="type must be 'deposit' or 'withdrawal'")
+    if data.amount is not None and data.amount <= 0:
+        raise HTTPException(400, detail="amount must be positive")
+
+    # Recalculate account balance if amount or type is changing
+    if data.amount is not None or data.type is not None:
+        old_delta = txn.amount if txn.type == "deposit" else -txn.amount
+        new_amount = data.amount if data.amount is not None else txn.amount
+        new_type = data.type if data.type is not None else txn.type
+        new_delta = new_amount if new_type == "deposit" else -new_amount
+        txn.account.balance += new_delta - old_delta
+
+    if data.type is not None:
+        txn.type = data.type
+    if data.amount is not None:
+        txn.amount = data.amount
     if data.description is not None:
         txn.description = data.description
     if data.date is not None:
@@ -103,6 +185,7 @@ def update_transaction(
         txn.category = data.category
     if data.is_recurring is not None:
         txn.is_recurring = data.is_recurring
+
     db.commit()
     db.refresh(txn)
     return _serialize(txn)
@@ -133,7 +216,11 @@ def apply_recurring(
     db: Session = Depends(get_db),
 ):
     now = datetime.utcnow()
-    month_start = datetime(now.year, now.month, 1)
+
+    # Only run once per calendar month per user
+    last = current_user.recurring_applied_at
+    if last and last.year == now.year and last.month == now.month:
+        return {"created": 0, "already_applied": True}
 
     templates = (
         db.query(models.Transaction)
@@ -147,36 +234,25 @@ def apply_recurring(
 
     created = 0
     for tmpl in templates:
-        already_exists = (
-            db.query(models.Transaction)
-            .filter(
-                models.Transaction.account_id == tmpl.account_id,
-                models.Transaction.type == tmpl.type,
-                models.Transaction.amount == tmpl.amount,
-                models.Transaction.description == tmpl.description,
-                models.Transaction.date >= month_start,
-            )
-            .first()
+        new_txn = models.Transaction(
+            account_id=tmpl.account_id,
+            type=tmpl.type,
+            amount=tmpl.amount,
+            description=tmpl.description,
+            category=tmpl.category,
+            date=now,
+            is_recurring=False,
         )
-        if not already_exists:
-            new_txn = models.Transaction(
-                account_id=tmpl.account_id,
-                type=tmpl.type,
-                amount=tmpl.amount,
-                description=tmpl.description,
-                category=tmpl.category,
-                date=now,
-                is_recurring=False,
-            )
-            db.add(new_txn)
-            if tmpl.type == "deposit":
-                tmpl.account.balance += tmpl.amount
-            else:
-                tmpl.account.balance -= tmpl.amount
-            created += 1
+        db.add(new_txn)
+        if tmpl.type == "deposit":
+            tmpl.account.balance += tmpl.amount
+        else:
+            tmpl.account.balance -= tmpl.amount
+        created += 1
 
+    current_user.recurring_applied_at = now
     db.commit()
-    return {"created": created}
+    return {"created": created, "already_applied": False}
 
 
 @router.post("/import")
@@ -196,7 +272,10 @@ async def import_csv(
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(400, detail="File must be a CSV")
 
-    content = await file.read()
+    MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
+    content = await file.read(MAX_CSV_BYTES + 1)
+    if len(content) > MAX_CSV_BYTES:
+        raise HTTPException(400, detail="File too large — maximum size is 10 MB")
     try:
         text = content.decode("utf-8-sig")  # strips BOM if present
     except UnicodeDecodeError:

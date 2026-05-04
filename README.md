@@ -26,11 +26,24 @@ A self-hosted personal finance tracker. Your data stays on your machine — no t
 
 ## Getting started
 
-### Requirements
-- Python 3.11+
-- Node 18+
+### Docker (recommended)
 
-### Run locally
+```bash
+git clone https://github.com/aiden202023/finance-os.git
+cd finance-os
+
+cp .env.example .env
+# Edit .env and set SECRET_KEY (or let the next command generate one)
+echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+
+docker compose up --build
+```
+
+Open [http://localhost:5173](http://localhost:5173) and create an account. Data is stored in a Docker volume and persists across restarts.
+
+### Run locally (without Docker)
+
+**Requirements:** Python 3.11+, Node 18+
 
 ```bash
 git clone https://github.com/aiden202023/finance-os.git
@@ -38,15 +51,30 @@ cd finance-os
 
 # Backend
 cd backend
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" > .env
 cd ..
+
+# Install frontend deps
+cd frontend && npm install && cd ..
 
 # Start both servers
 bash start.sh
 ```
 
 Open [http://localhost:5173](http://localhost:5173) and create an account.
+
+### Try it with sample data
+
+To see the app fully populated without entering anything manually:
+
+```bash
+cd backend
+python3 seed.py
+```
+
+This creates a demo account (`demo@example.com` / `Demo1234!`) with 4 accounts, 3 months of realistic transactions, savings goals, and Roth IRA data.
 
 ## CSV import
 

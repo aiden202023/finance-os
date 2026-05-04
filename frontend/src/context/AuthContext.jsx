@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import api from "../api/client";
+import api, { setLogoutHandler } from "../api/client";
 
 const AuthContext = createContext(null);
 
@@ -32,6 +32,10 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUser(null);
   }
+
+  useEffect(() => {
+    setLogoutHandler(logout);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout, loading }}>

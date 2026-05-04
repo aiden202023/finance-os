@@ -172,6 +172,124 @@ function TransactionModal({ accounts, onClose, onSaved }) {
   );
 }
 
+function EditModal({ txn, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    type: txn.type,
+    amount: String(txn.amount),
+    description: txn.description || "",
+    date: new Date(txn.date).toISOString().slice(0, 10),
+    category: txn.category || "",
+    is_recurring: txn.is_recurring || false,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await api.patch(`/transactions/${txn.id}`, {
+        type: form.type,
+        amount: parseFloat(form.amount),
+        description: form.description,
+        date: form.date ? new Date(form.date).toISOString() : undefined,
+        category: form.category || null,
+        is_recurring: form.is_recurring,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to update transaction");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">Edit Transaction</div>
+        {error && <div className="auth-error">{error}</div>}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="label">Type</label>
+              <select
+                className="select"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+              >
+                <option value="deposit">Deposit</option>
+                <option value="withdrawal">Withdrawal</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Amount ($)</label>
+              <input
+                className="input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="label">Date</label>
+              <input
+                className="input"
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm({ ...form, date: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="label">Category</label>
+              <select
+                className="select"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                <option value="">Uncategorized</option>
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Description (optional)</label>
+            <input
+              className="input"
+              placeholder="e.g. Paycheck, ETF purchase…"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.is_recurring}
+              onChange={(e) => setForm({ ...form, is_recurring: e.target.checked })}
+              style={{ width: 16, height: 16, accentColor: "var(--accent)" }}
+            />
+            Recurring monthly — auto-log this every month
+          </label>
+          <div className="form-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function ImportModal({ accounts, onClose, onSaved }) {
   const [accountId, setAccountId] = useState(accounts[0]?.id || "");
   const [file, setFile] = useState(null);
@@ -302,13 +420,16 @@ function ImportModal({ accounts, onClose, onSaved }) {
 export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
-  const [filter, setFilter] = useState("");
+  const [filters, setFilters] = useState({ account_id: "", type: "", category: "", search: "", date_from: "", date_to: "" });
   const [modal, setModal] = useState(false);
   const [importModal, setImportModal] = useState(false);
+  const [editTxn, setEditTxn] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function load() {
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ""));
     const [txns, accts] = await Promise.all([
-      api.get("/transactions/", { params: filter ? { account_id: filter } : {} }),
+      api.get("/transactions/", { params }),
       api.get("/accounts/"),
     ]);
     setTransactions(txns.data);
@@ -320,12 +441,33 @@ export default function Transactions() {
     load();
   }, []);
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => { load(); }, [filters]);
+
+  function setFilter(key, value) {
+    setFilters((f) => ({ ...f, [key]: value }));
+  }
+
+  function clearFilters() {
+    setFilters({ account_id: "", type: "", category: "", search: "", date_from: "", date_to: "" });
+  }
+
+  const hasActiveFilters = Object.values(filters).some((v) => v !== "");
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this transaction? The account balance will be reversed.")) return;
     await api.delete(`/transactions/${id}`);
+    setPendingDelete(null);
     load();
+  }
+
+  async function handleExport() {
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ""));
+    const res = await api.get("/transactions/export", { params, responseType: "blob" });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -336,6 +478,14 @@ export default function Transactions() {
           <div className="page-subtitle">All deposits and withdrawals</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-ghost"
+            onClick={handleExport}
+            disabled={transactions.length === 0}
+            title={transactions.length === 0 ? "No transactions to export" : ""}
+          >
+            Export CSV
+          </button>
           <button
             className="btn btn-ghost"
             onClick={() => setImportModal(true)}
@@ -355,18 +505,51 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="filter-row">
-        <select
-          className="select"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        >
+      <div className="filter-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <input
+          className="input"
+          style={{ flex: "1 1 180px", minWidth: 0 }}
+          placeholder="Search description…"
+          value={filters.search}
+          onChange={(e) => setFilter("search", e.target.value)}
+        />
+        <select className="select" style={{ flex: "0 0 auto" }} value={filters.account_id} onChange={(e) => setFilter("account_id", e.target.value)}>
           <option value="">All accounts</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>{a.name}</option>
           ))}
         </select>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>
+        <select className="select" style={{ flex: "0 0 auto" }} value={filters.type} onChange={(e) => setFilter("type", e.target.value)}>
+          <option value="">All types</option>
+          <option value="deposit">Deposits</option>
+          <option value="withdrawal">Withdrawals</option>
+        </select>
+        <select className="select" style={{ flex: "0 0 auto" }} value={filters.category} onChange={(e) => setFilter("category", e.target.value)}>
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+          ))}
+        </select>
+        <input
+          className="input"
+          type="date"
+          style={{ flex: "0 0 auto" }}
+          value={filters.date_from}
+          onChange={(e) => setFilter("date_from", e.target.value)}
+          title="From date"
+        />
+        <input
+          className="input"
+          type="date"
+          style={{ flex: "0 0 auto" }}
+          value={filters.date_to}
+          onChange={(e) => setFilter("date_to", e.target.value)}
+          title="To date"
+        />
+        {hasActiveFilters && (
+          <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>
+        )}
+        <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: "auto", alignSelf: "center" }}>
           {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -421,12 +604,30 @@ export default function Transactions() {
                       {t.type === "deposit" ? "+" : "-"}{fmt(t.amount)}
                     </td>
                     <td>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => handleDelete(t.id)}
-                      >
-                        Delete
-                      </button>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {pendingDelete === t.id ? (
+                          <>
+                            <span style={{ fontSize: 12, color: "var(--muted)" }}>Sure?</span>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t.id)}>Yes</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setPendingDelete(null)}>No</button>
+                          </>
+                        ) : (
+                          <>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setEditTxn(t)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => setPendingDelete(t.id)}
+                        >
+                          Delete
+                        </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -449,6 +650,14 @@ export default function Transactions() {
           accounts={accounts}
           onClose={() => setImportModal(false)}
           onSaved={() => load()}
+        />
+      )}
+
+      {editTxn && (
+        <EditModal
+          txn={editTxn}
+          onClose={() => setEditTxn(null)}
+          onSaved={() => { setEditTxn(null); load(); }}
         />
       )}
     </div>

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user
 from database import Base, engine, get_db
 import models
-from routes import accounts, auth_routes, goals, transactions
+from routes import accounts, auth_routes, goals, roth_ira, transactions
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,6 +20,7 @@ with engine.connect() as _conn:
     for _col, _typedef in [
         ("reset_token", "TEXT"),
         ("reset_token_expires", "DATETIME"),
+        ("recurring_applied_at", "DATETIME"),
     ]:
         try:
             _conn.execute(__import__("sqlalchemy").text(f"ALTER TABLE users ADD COLUMN {_col} {_typedef}"))
@@ -38,6 +39,13 @@ with engine.connect() as _conn:
         except Exception:
             pass
 
+with engine.connect() as _conn:
+    try:
+        _conn.execute(__import__("sqlalchemy").text("ALTER TABLE roth_ira ADD COLUMN allocations TEXT"))
+        _conn.commit()
+    except Exception:
+        pass
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Finance OS API", version="1.0.0")
 app.state.limiter = limiter
@@ -55,6 +63,7 @@ app.include_router(auth_routes.router, prefix="/auth", tags=["auth"])
 app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 app.include_router(transactions.router, prefix="/transactions", tags=["transactions"])
 app.include_router(goals.router, prefix="/goals", tags=["goals"])
+app.include_router(roth_ira.router, prefix="/roth-ira", tags=["roth-ira"])
 
 
 @app.get("/dashboard/summary")

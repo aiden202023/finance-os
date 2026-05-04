@@ -96,7 +96,7 @@ function AccountModal({ account, onClose, onSaved }) {
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
   const [modal, setModal] = useState(null); // null | { mode: 'add' | 'edit', account? }
-  const [deleting, setDeleting] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function load() {
     const { data } = await api.get("/accounts/");
@@ -106,10 +106,8 @@ export default function Accounts() {
   useEffect(() => { load(); }, []);
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this account and all its transactions?")) return;
-    setDeleting(id);
     await api.delete(`/accounts/${id}`);
-    setDeleting(null);
+    setPendingDelete(null);
     load();
   }
 
@@ -137,19 +135,28 @@ export default function Accounts() {
               <div className="account-card-header">
                 <span className={`badge badge-${a.type}`}>{TYPE_LABELS[a.type]}</span>
                 <div className="account-card-actions">
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setModal({ mode: "edit", account: a })}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => handleDelete(a.id)}
-                    disabled={deleting === a.id}
-                  >
-                    Delete
-                  </button>
+                  {pendingDelete === a.id ? (
+                    <>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>Delete account + all transactions?</span>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(a.id)}>Yes</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setPendingDelete(null)}>No</button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setModal({ mode: "edit", account: a })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => setPendingDelete(a.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="account-card-name">{a.name}</div>

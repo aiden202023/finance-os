@@ -129,6 +129,8 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
+    type: Optional[str] = None
+    amount: Optional[float] = None
     description: Optional[str] = None
     date: Optional[datetime] = None
     category: Optional[str] = None
@@ -177,3 +179,24 @@ class GoalResponse(BaseModel):
     current_amount: float
     target_date: Optional[datetime] = None
     created_at: datetime
+
+
+# ── Roth IRA ──────────────────────────────────────────────────────────────────
+
+class RothIRAAllocation(BaseModel):
+    ticker: str
+    pct: float
+    rate: float
+    color: str
+
+
+class RothIRAUpdate(BaseModel):
+    balance: float
+    contributed: float
+    allocations: Optional[list[RothIRAAllocation]] = None
+
+
+class RothIRAResponse(BaseModel):
+    balance: float
+    contributed: float
+    allocations: Optional[list[RothIRAAllocation]] = None

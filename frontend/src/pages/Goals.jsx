@@ -105,6 +105,7 @@ function GoalModal({ goal, onClose, onSaved }) {
 export default function Goals() {
   const [goals, setGoals] = useState([]);
   const [modal, setModal] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function load() {
     const { data } = await api.get("/goals/");
@@ -114,8 +115,8 @@ export default function Goals() {
   useEffect(() => { load(); }, []);
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this goal?")) return;
     await api.delete(`/goals/${id}`);
+    setPendingDelete(null);
     load();
   }
 
@@ -168,12 +169,22 @@ export default function Goals() {
                   </div>
                 )}
                 <div className="goal-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => setModal({ goal: g })}>
-                    Edit
-                  </button>
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(g.id)}>
-                    Delete
-                  </button>
+                  {pendingDelete === g.id ? (
+                    <>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>Sure?</span>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(g.id)}>Yes</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setPendingDelete(null)}>No</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setModal({ goal: g })}>
+                        Edit
+                      </button>
+                      <button className="btn btn-danger btn-sm" onClick={() => setPendingDelete(g.id)}>
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );

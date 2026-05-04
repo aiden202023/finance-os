@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -15,6 +15,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
+    recurring_applied_at = Column(DateTime, nullable=True)
 
     accounts = relationship("Account", back_populates="owner", cascade="all, delete-orphan")
     goals = relationship("Goal", back_populates="owner", cascade="all, delete-orphan")
@@ -65,3 +66,14 @@ class Goal(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="goals")
+
+
+class RothIRARecord(Base):
+    __tablename__ = "roth_ira"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    balance = Column(Float, default=0.0)
+    contributed = Column(Float, default=0.0)
+    contributed_year = Column(Integer, nullable=True)
+    allocations = Column(Text, nullable=True)  # JSON array, null = use defaults
